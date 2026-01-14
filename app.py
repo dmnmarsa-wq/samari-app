@@ -310,4 +310,3 @@ else:
         if st.button("إضافة حساب"):
             c.execute("INSERT INTO accounts (code, name, level) VALUES (?,?,?)", (code, name, 2))
             conn.commit(); st.success("تم")
-
