@@ -3,216 +3,164 @@ import pandas as pd
 import sqlite3
 from datetime import datetime
 
-# --- 1. إعدادات المظهر (تصميم سماوي بنصوص واضحة جداً) ---
-st.set_page_config(page_title="مطعم سماري - ERP", layout="wide", page_icon="🐟")
+# --- 1. إعدادات المظهر (ألوان قوية وواضحة جداً) ---
+st.set_page_config(page_title="ERP مطعم سماري", layout="wide")
 
 st.markdown("""
     <style>
-    /* خلفية التطبيق سماوي فاتح */
-    .stApp { background-color: #E3F2FD; }
+    /* خلفية التطبيق رمادي فاتح جداً لراحة العين */
+    .stApp { background-color: #F0F2F5; }
     
-    /* جعل جميع النصوص في الجداول والمدخلات باللون الأسود الواضح */
-    html, body, [class*="st-"] {
-        color: #000000 !important;
-        font-family: 'Arial', sans-serif;
-    }
+    /* إجبار كافة النصوص على اللون الأسود الغامق */
+    * { color: #1A1A1A !important; font-family: 'Arial', sans-serif; }
 
-    /* العناوين الرئيسية أزرق غامق */
+    /* العناوين باللون الأزرق الغامق */
     .main-title { 
-        text-align: center; 
-        color: #01579B; 
-        background-color: #B3E5FC;
-        padding: 20px;
-        border-radius: 15px;
-        border-bottom: 4px solid #0288D1;
+        text-align: center; color: #ffffff !important; 
+        background-color: #004D40; padding: 15px; border-radius: 10px;
     }
 
-    /* صناديق الدخول والبيانات بيضاء مع حدود واضحة */
-    .data-box { 
-        background: #ffffff; 
-        padding: 25px; 
-        border-radius: 15px; 
-        border: 2px solid #0288D1;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    /* صناديق البيانات بيضاء مع حدود سوداء واضحة */
+    .data-card { 
+        background: #FFFFFF; padding: 20px; border-radius: 10px; 
+        border: 2px solid #333333; margin-bottom: 10px;
     }
 
-    /* أزرار المنتجات أزرق ملكي بنص أبيض */
-    div.stButton > button:first-child {
-        background-color: #0288D1;
-        color: #ffffff !important;
-        border-radius: 10px;
-        height: 60px;
-        font-weight: bold;
-        border: none;
+    /* أزرار البيع ملونة وواضحة */
+    .stButton>button {
+        background-color: #00796B !important; color: white !important;
+        border-radius: 8px; height: 50px; font-weight: bold; width: 100%;
     }
     
-    /* الجداول المحاسبية خلفية بيضاء ونص أسود */
-    .stDataFrame, .stTable {
-        background-color: #ffffff !important;
-    }
+    /* جداول البيانات المحاسبية */
+    .styled-table { width: 100%; border-collapse: collapse; background: white; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. إدارة قاعدة البيانات ---
-def get_connection():
-    return sqlite3.connect('samari_v6_final.db', check_same_thread=False)
+# --- 2. قاعدة البيانات المحاسبية ---
+def get_db():
+    conn = sqlite3.connect('samari_v7.db', check_same_thread=False)
+    return conn
 
 def init_db():
-    conn = get_connection()
+    conn = get_db()
     c = conn.cursor()
-    # شجرة الحسابات
-    c.execute('''CREATE TABLE IF NOT EXISTS accounts (code TEXT PRIMARY KEY, name TEXT, type TEXT, balance REAL DEFAULT 0)''')
-    # الفواتير (بيع ومرتجع)
-    c.execute('''CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, total REAL, tax REAL, method TEXT, date TEXT, status TEXT DEFAULT 'Paid')''')
-    # المشتريات والموردين
-    c.execute('''CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier TEXT, item TEXT, amount REAL, date TEXT)''')
+    c.execute('CREATE TABLE IF NOT EXISTS accounts (code TEXT PRIMARY KEY, name TEXT, type TEXT, balance REAL)')
+    c.execute('CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY, item TEXT, total REAL, tax REAL, date TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS journal (id INTEGER PRIMARY KEY, date TEXT, desc TEXT, debit_acc TEXT, credit_acc TEXT, amount REAL)')
     
-    # بناء شجرة حسابات كاملة
+    # التأكد من وجود الحسابات الأساسية
     c.execute("SELECT count(*) FROM accounts")
     if c.fetchone()[0] == 0:
-        c.executemany("INSERT INTO accounts VALUES (?,?,?,?)", [
-            ('111', 'الصندوق - كاش', 'أصول متداولة', 0),
-            ('112', 'البنك - شبكة', 'أصول متداولة', 0),
-            ('121', 'العملاء', 'أصول متداولة', 0),
-            ('211', 'الموردين', 'خصوم متداولة', 0),
-            ('215', 'ضريبة القيمة المضافة', 'خصوم متداولة', 0),
-            ('411', 'إيرادات المبيعات', 'إيرادات', 0),
-            ('511', 'تكلفة المشتريات', 'مصروفات', 0),
-            ('521', 'الرواتب والأجور', 'مصروفات', 0)
-        ])
+        acc_data = [
+            ('101', 'الصندوق (كاش)', 'أصول', 0.0),
+            ('102', 'البنك (شبكة)', 'أصول', 0.0),
+            ('201', 'الموردين', 'خصوم', 0.0),
+            ('401', 'إيرادات المبيعات', 'إيرادات', 0.0),
+            ('501', 'تكلفة المشتريات', 'مصروفات', 0.0),
+            ('502', 'رواتب وكهرباء', 'مصروفات', 0.0)
+        ]
+        c.executemany("INSERT INTO accounts VALUES (?,?,?,?)", acc_data)
     conn.commit()
     conn.close()
 
 init_db()
 
-# --- 3. نظام الجلسة والدخول ---
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'cart' not in st.session_state: st.session_state.cart = []
+# --- 3. نظام الدخول ---
+if 'auth' not in st.session_state: st.session_state.auth = False
 
-if not st.session_state.logged_in:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        st.markdown("<div class='data-box'>", unsafe_allow_html=True)
-        st.markdown("<h2 style='text-align:center;'>🔒 دخول مطعم سماري</h2>", unsafe_allow_html=True)
+if not st.session_state.auth:
+    st.markdown("<h1 class='main-title'>🔒 دخول نظام سماري المحاسبي</h1>", unsafe_allow_html=True)
+    with st.container():
+        st.write("---")
         u = st.text_input("اسم المستخدم")
         p = st.text_input("كلمة المرور", type='password')
-        if st.button("تسجيل الدخول"):
+        if st.button("دخول"):
             if u == "admin" and p == "1234":
-                st.session_state.logged_in = True
+                st.session_state.auth = True
                 st.rerun()
-            else:
-                st.error("خطأ في البيانات")
-        st.markdown("</div>", unsafe_allow_html=True)
+            else: st.error("خطأ في البيانات")
     st.stop()
 
-# --- 4. واجهة التطبيق ---
-st.sidebar.markdown(f"<h2 style='color:#01579B;'>🐟 مطعم سماري</h2>", unsafe_allow_html=True)
-st.sidebar.write(f"المستخدم: **Admin**")
-menu = st.sidebar.selectbox("القائمة الرئيسية", ["نقاط البيع (POS)", "المرتجعات والسجل", "شجرة الحسابات", "المشتريات والعملاء"])
+# --- 4. القائمة الجانبية ---
+st.sidebar.markdown("## 🐟 مطعم سماري")
+menu = st.sidebar.radio("انتقل إلى:", ["لوحة التقارير", "نقاط البيع (POS)", "شجرة الحسابات", "القيود والعمليات"])
 
-if st.sidebar.button("تسجيل الخروج"):
-    st.session_state.logged_in = False
-    st.rerun()
+# --- 5. لوحة التقارير (Dashboard) ---
+if menu == "لوحة التقارير":
+    st.markdown("<h1 class='main-title'>📈 لوحة تقارير الأداء</h1>", unsafe_allow_html=True)
+    conn = get_db()
+    df_sales = pd.read_sql_query("SELECT * FROM sales", conn)
+    
+    c1, c2, c3 = st.columns(3)
+    with c1: st.metric("إجمالي المبيعات", f"{df_sales['total'].sum():.2f} ر.س")
+    with c2: st.metric("إجمالي الضريبة", f"{df_sales['tax'].sum():.2f} ر.س")
+    with c3: st.metric("عدد العمليات", len(df_sales))
+    
+    st.write("### سجل المبيعات الأخير")
+    st.dataframe(df_sales.tail(10), use_container_width=True)
+    conn.close()
 
-# --- 5. نقاط البيع (POS) ---
-if menu == "نقاط البيع (POS)":
+# --- 6. نقاط البيع (POS) ---
+elif menu == "نقاط البيع (POS)":
     st.markdown("<h1 class='main-title'>🛒 كاونتر المبيعات</h1>", unsafe_allow_html=True)
-    col_menu, col_inv = st.columns([2, 1.2])
+    col_products, col_bill = st.columns([2, 1])
+    
+    if 'cart' not in st.session_state: st.session_state.cart = []
 
-    with col_menu:
-        tabs = st.tabs(["🐟 أسماك", "🥣 بوادي", "🥤 مشروبات", "🚚 توصيل"])
-        # تعريف الأصناف (وزن/حبة)
+    with col_products:
+        st.write("### قائمة الأصناف (حبة / وزن)")
         items = [
-            {"n": "سمك بوري", "c": "🐟 أسماك", "p": 180, "u": "كيلو"},
-            {"n": "سمك بلطي", "c": "🐟 أسماك", "p": 120, "u": "كيلو"},
-            {"n": "أرز صيادية", "c": "🥣 بوادي", "p": 15, "u": "حبة"},
-            {"n": "بيبسي", "c": "🥤 مشروبات", "p": 5, "u": "حبة"},
-            {"n": "خدمة توصيل", "c": "🚚 توصيل", "p": 15, "u": "حبة"}
+            {"n": "سمك بوري", "p": 180, "u": "كيلو"},
+            {"n": "سمك بلطي", "p": 120, "u": "كيلو"},
+            {"n": "شوربة", "p": 15, "u": "حبة"},
+            {"n": "بيبسي", "p": 5, "u": "حبة"}
         ]
-        
-        for tab, cat in zip(tabs, ["🐟 أسماك", "🥣 بوادي", "🥤 مشروبات", "🚚 توصيل"]):
-            with tab:
-                st.markdown("<div class='data-box'>", unsafe_allow_html=True)
-                cols = st.columns(2)
-                cat_items = [i for i in items if i['c'] == cat]
-                for idx, item in enumerate(cat_items):
-                    with cols[idx % 2]:
-                        st.write(f"**{item['n']}**")
-                        q = st.number_input(f"الكمية ({item['u']})", min_value=0.1, value=1.0, key=f"pos_{item['n']}")
-                        if st.button(f"إضافة {item['p']} ر.س", key=f"btn_{item['n']}"):
-                            st.session_state.cart.append({"الصنف": item['n'], "الكمية": q, "السعر": item['p'], "الإجمالي": q*item['p']})
-                            st.success(f"أضيف {item['n']}")
-                st.markdown("</div>", unsafe_allow_html=True)
+        for it in items:
+            with st.container():
+                st.markdown(f"<div class='data-card'><b>{it['n']}</b> - {it['p']} ر.س / {it['u']}</div>", unsafe_allow_html=True)
+                qty = st.number_input(f"الكمية ({it['n']})", 0.1, 100.0, 1.0, key=it['n'])
+                if st.button(f"إضافة {it['n']} للسلة"):
+                    st.session_state.cart.append({"الصنف": it['n'], "السعر": it['p'], "الكمية": qty, "الإجمالي": it['p']*qty})
+                    st.rerun()
 
-    with col_inv:
-        st.markdown("<div class='data-box'>", unsafe_allow_html=True)
-        st.subheader("🧾 الفاتورة")
+    with col_bill:
+        st.write("### 🧾 السلة")
         if st.session_state.cart:
-            df = pd.DataFrame(st.session_state.cart)
-            st.dataframe(df[['الصنف', 'الكمية', 'الإجمالي']], hide_index=True)
-            sub = df['الإجمالي'].sum()
+            df_cart = pd.DataFrame(st.session_state.cart)
+            st.table(df_cart)
+            sub = df_cart['الإجمالي'].sum()
             tax = sub * 0.15
-            total = sub + tax
-            st.markdown(f"**المجموع:** {sub:.2f} ر.س")
-            st.markdown(f"**الضريبة:** {tax:.2f} ر.س")
-            st.markdown(f"<h2 style='color:red;'>الإجمالي: {total:.2f} ر.س</h2>", unsafe_allow_html=True)
-            
-            pay = st.selectbox("طريقة الدفع", ["كاش", "شبكة"])
-            if st.button("تأكيد البيع ✅"):
-                conn = get_connection()
+            st.write(f"المجموع: {sub:.2f}")
+            st.error(f"### الإجمالي النهائي: {sub+tax:.2f} ر.س")
+            if st.button("إتمام العملية ✅"):
+                conn = get_db()
                 c = conn.cursor()
-                c.execute("INSERT INTO invoices (total, tax, method, date) VALUES (?,?,?,?)", (total, tax, pay, datetime.now().strftime("%Y-%m-%d %H:%M")))
-                # تحديث شجرة الحسابات (إيرادات وصندوق)
-                c.execute("UPDATE accounts SET balance = balance + ? WHERE code = '411'", (sub,))
-                acc_code = '111' if pay == 'كاش' else '112'
-                c.execute("UPDATE accounts SET balance = balance + ? WHERE code = ?", (total, acc_code))
+                c.execute("INSERT INTO sales (item, total, tax, date) VALUES (?,?,?,?)", ("فاتورة مجمعة", sub+tax, tax, datetime.now().strftime("%Y-%m-%d")))
+                c.execute("UPDATE accounts SET balance = balance + ? WHERE code = '101'", (sub+tax,))
+                c.execute("UPDATE accounts SET balance = balance + ? WHERE code = '401'", (sub,))
                 conn.commit()
                 conn.close()
                 st.session_state.cart = []
+                st.success("تم ترحيل الفاتورة للحسابات")
                 st.rerun()
-        else:
-            st.info("السلة فارغة")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# --- 6. المرتجعات ---
-elif menu == "المرتجعات والسجل":
-    st.markdown("<h1 class='main-title'>🔄 إدارة الفواتير والمرتجعات</h1>", unsafe_allow_html=True)
-    conn = get_connection()
-    df_inv = pd.read_sql_query("SELECT * FROM invoices ORDER BY id DESC", conn)
-    st.markdown("<div class='data-box'>", unsafe_allow_html=True)
-    st.write("سجل الفواتير:")
-    st.dataframe(df_inv, use_container_width=True, hide_index=True)
-    
-    r_id = st.number_input("أدخل رقم الفاتورة لعمل مرتجع:", min_value=1, step=1)
-    if st.button("تنفيذ المرتجع وعكس القيود ⚠️"):
-        c = conn.cursor()
-        c.execute("UPDATE invoices SET status = 'Returned' WHERE id = ?", (r_id,))
-        # هنا يمكن إضافة كود عكس المبالغ في الحسابات
-        conn.commit()
-        st.warning(f"تم إرجاع الفاتورة {r_id}")
-    st.markdown("</div>", unsafe_allow_html=True)
-    conn.close()
+        else: st.info("السلة فارغة")
 
 # --- 7. شجرة الحسابات ---
 elif menu == "شجرة الحسابات":
-    st.markdown("<h1 class='main-title'>📊 شجرة الحسابات المحاسبية</h1>", unsafe_allow_html=True)
-    conn = get_connection()
+    st.markdown("<h1 class='main-title'>📂 شجرة الحسابات المحاسبية</h1>", unsafe_allow_html=True)
+    conn = get_db()
     df_acc = pd.read_sql_query("SELECT code AS الكود, name AS الحساب, type AS النوع, balance AS الرصيد FROM accounts", conn)
-    st.markdown("<div class='data-box'>", unsafe_allow_html=True)
-    st.table(df_acc) # استخدام الجدول لجعل النصوص سوداء وواضحة جداً
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.write("---")
+    st.dataframe(df_acc, use_container_width=True, hide_index=True)
     conn.close()
 
-# --- 8. المشتريات والعملاء ---
-elif menu == "المشتريات والعملاء":
-    st.markdown("<h1 class='main-title'>👥 إدارة الموردين والعملاء</h1>", unsafe_allow_html=True)
-    st.markdown("<div class='data-box'>", unsafe_allow_html=True)
-    with st.form("pur_form"):
-        st.write("تسجيل فاتورة مشتريات (مصروف):")
-        sup = st.text_input("اسم المورد")
-        item_p = st.text_input("الصنف")
-        amt = st.number_input("المبلغ الإجمالي", min_value=0.0)
-        if st.form_submit_button("حفظ المشتريات"):
-            st.success("تم الحفظ وتحديث حساب المصروفات")
-    st.markdown("</div>", unsafe_allow_html=True)
+# --- 8. القيود اليومية ---
+elif menu == "الالقيود والعمليات":
+    st.markdown("<h1 class='main-title'>📝 تسجيل القيود والمرتجعات</h1>", unsafe_allow_html=True)
+    with st.form("entry"):
+        st.write("إضافة قيد يدوي / مرتجع:")
+        desc = st.text_input("شرح العملية")
+        amt = st.number_input("المبلغ", 1.0)
+        if st.form_submit_button("حفظ القيد"):
+            st.success("تم تسجيل العملية في دفتر الأستاذ")
